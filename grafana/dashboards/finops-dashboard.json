@@ -1,0 +1,54 @@
+{
+  "uid": "finops-cost-visibility",
+  "title": "FinOps — Cloud Cost Visibility",
+  "tags": ["finops", "aws", "cost"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {"from": "now-7d", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "title": "Daily Total Cost (USD)",
+      "type": "timeseries",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "finops-sqlite"},
+      "gridPos": {"h": 9, "w": 16, "x": 0, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}},
+      "targets": [{"refId": "A", "rawSql": "SELECT date AS time, SUM(cost_usd) AS cost_usd FROM daily_costs GROUP BY date ORDER BY date", "format": "time_series"}]
+    },
+    {
+      "id": 2,
+      "title": "Cost by Service (USD)",
+      "type": "barchart",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "finops-sqlite"},
+      "gridPos": {"h": 9, "w": 8, "x": 16, "y": 0},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
+      "options": {"orientation": "horizontal", "showValue": "always", "legend": {"showLegend": false}},
+      "targets": [{"refId": "A", "rawSql": "SELECT service, ROUND(SUM(cost_usd), 4) AS cost_usd FROM daily_costs WHERE date >= date('now', '-7 day') GROUP BY service ORDER BY cost_usd DESC", "format": "table"}]
+    },
+    {
+      "id": 3,
+      "title": "Total Cost — Last 7 Days (USD)",
+      "type": "stat",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "finops-sqlite"},
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 9},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "value"},
+      "targets": [{"refId": "A", "rawSql": "SELECT SUM(cost_usd) AS total_cost FROM daily_costs WHERE date >= date('now', '-7 day')", "format": "table"}]
+    },
+    {
+      "id": 4,
+      "title": "Daily Cost Records",
+      "type": "table",
+      "datasource": {"type": "frser-sqlite-datasource", "uid": "finops-sqlite"},
+      "gridPos": {"h": 9, "w": 16, "x": 8, "y": 9},
+      "fieldConfig": {"defaults": {"unit": "currencyUSD", "decimals": 4}, "overrides": []},
+      "options": {"showHeader": true, "sortBy": [{"displayName": "date", "desc": true}]},
+      "targets": [{"refId": "A", "rawSql": "SELECT date, service, ROUND(cost_usd, 4) AS cost_usd FROM daily_costs ORDER BY date DESC, cost_usd DESC LIMIT 100", "format": "table"}]
+    }
+  ],
+  "annotations": {"list": []},
+  "links": []
+}
