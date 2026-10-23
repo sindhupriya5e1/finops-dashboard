@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: FinOps SQLite
+    uid: finops-sqlite
+    type: frser-sqlite-datasource
+    access: proxy
+    isDefault: true
+    editable: true
+    jsonData:
+      path: /var/lib/grafana/finops/finops.db
