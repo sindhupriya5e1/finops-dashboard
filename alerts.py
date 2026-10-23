@@ -1,39 +1,40 @@
-import sqlite3
+"""Daily cost-risk summary using configurable demo thresholds."""
+import os
 
-DB_PATH = "data/finops.db"
+from database import get_connection, create_database
 
-# Demo risk thresholds
-WARNING_LIMIT = 0.05
-AT_RISK_LIMIT = 0.10
+WARNING_LIMIT = float(os.getenv("FINOPS_WARNING_USD", "0.05"))
+AT_RISK_LIMIT = float(os.getenv("FINOPS_AT_RISK_USD", "0.10"))
+
+
+def classify_cost(cost):
+    if cost < WARNING_LIMIT:
+        return "SAFE"
+    if cost <= AT_RISK_LIMIT:
+        return "WARNING"
+    return "AT-RISK"
 
 
 def check_alerts():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    create_database()
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT date, SUM(cost_usd) AS daily_total
+            FROM daily_costs
+            GROUP BY date
+            ORDER BY date
+        """).fetchall()
 
-    cursor.execute("""
-        SELECT date, cost_usd
-        FROM daily_costs
-        ORDER BY date
-    """)
+    print("\n===== FINOPS DAILY COST RISK REPORT =====")
+    if not rows:
+        print("No cost data available. Run python fetch_cost.py first.")
+        return
 
-    rows = cursor.fetchall()
-    conn.close()
+    for row in rows:
+        cost = float(row["daily_total"])
+        print(f"{row['date']} -> ${cost:.4f} -> {classify_cost(cost)}")
 
-    print("\n===== FINOPS COST RISK REPORT =====")
-
-    for date, cost in rows:
-
-        if cost < WARNING_LIMIT:
-            status = "SAFE"
-
-        elif cost <= AT_RISK_LIMIT:
-            status = "WARNING"
-
-        else:
-            status = "AT-RISK"
-
-        print(f"{date} -> ${cost:.10f} -> {status}")
+    print("\nNote: thresholds are configurable demo values, not AWS Free Tier limits.")
 
 
 if __name__ == "__main__":
