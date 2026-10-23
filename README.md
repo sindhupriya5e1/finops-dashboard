@@ -39,7 +39,9 @@ Demo sample data / Local emulator / AWS Cost Explorer
 
 ## Quick start on Windows
 
-Open PowerShell in the project folder and run:
+**Easiest option:** double-click `run_demo.bat` in File Explorer. It creates a virtual environment, installs dependencies, generates local sample costs, prints alerts, exports the CSV report, and runs tests. No AWS account or Docker is required for this step.
+
+Or open PowerShell in the project folder and run:
 
 ```powershell
 py -m venv .venv
@@ -143,6 +145,7 @@ finops-dashboard/
 ├── database.py              # SQLite schema and persistence
 ├── fetch_cost.py            # Demo, emulator, or AWS collection
 ├── report.py                # Weekly summary and CSV export
+├── run_demo.bat             # One-click Windows demo
 ├── docker-compose.yml       # Optional Grafana service
 └── requirements.txt
 ```
