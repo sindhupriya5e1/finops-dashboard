@@ -31,7 +31,7 @@ def load_demo_costs(end_date=None):
     records = []
     # Slight deterministic variation makes the dashboard trend more informative.
     multipliers = (0.82, 0.94, 1.08, 0.91, 1.17, 1.02, 1.11)
-    for offset, multiplier in enumerate(multipliers, start=7):
+    for offset, multiplier in zip(range(7, 0, -1), multipliers):
         day = (end_date - timedelta(days=offset)).isoformat()
         for service, base_cost in DEMO_SERVICES.items():
             records.append((day, service, round(base_cost * multiplier, 4)))
