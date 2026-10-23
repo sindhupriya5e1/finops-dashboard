@@ -1,57 +1,76 @@
-import boto3
-import sqlite3
+"""Fetch the last seven completed days of cost data.
+
+Set FINOPS_MODE=aws and configure normal AWS credentials to use real Cost Explorer.
+Set FINOPS_MODE=local to use a compatible local emulator (demo data only).
+"""
+import os
 from datetime import date, timedelta
 
-# Floci Cost Explorer connection
-ce = boto3.client(
-    "ce",
-    endpoint_url="http://localhost:4566",
-    aws_access_key_id="test",
-    aws_secret_access_key="test",
-    region_name="us-east-1"
-)
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
-DB_PATH = "data/finops.db"
+from database import create_database, upsert_cost
+
+MODE = os.getenv("FINOPS_MODE", "local").strip().lower()
+REGION = os.getenv("AWS_REGION", "us-east-1")
+
+
+def make_cost_client():
+    if MODE == "aws":
+        # Uses the standard AWS credential chain (profile, environment, or IAM role).
+        return boto3.client("ce", region_name=REGION)
+    if MODE == "local":
+        endpoint = os.getenv("FINOPS_ENDPOINT_URL", "http://localhost:4566")
+        return boto3.client(
+            "ce",
+            endpoint_url=endpoint,
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID", "test"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
+            region_name=REGION,
+        )
+    raise ValueError("FINOPS_MODE must be 'local' or 'aws'.")
 
 
 def fetch_and_store_costs():
-    # Last 7 days
+    create_database()
+    # Cost Explorer's End date is exclusive; use completed days to avoid partial today.
     end_date = date.today()
     start_date = end_date - timedelta(days=7)
+    client = make_cost_client()
 
-    response = ce.get_cost_and_usage(
-        TimePeriod={
-            "Start": start_date.isoformat(),
-            "End": end_date.isoformat()
-        },
-        Granularity="DAILY",
-        Metrics=["UnblendedCost"]
-    )
+    params = {
+        "TimePeriod": {"Start": start_date.isoformat(), "End": end_date.isoformat()},
+        "Granularity": "DAILY",
+        "Metrics": ["UnblendedCost"],
+    }
+    if MODE == "aws":
+        params["GroupBy"] = [{"Type": "DIMENSION", "Key": "SERVICE"}]
 
-    connection = sqlite3.connect(DB_PATH)
-    cursor = connection.cursor()
+    try:
+        response = client.get_cost_and_usage(**params)
+    except (BotoCoreError, ClientError) as exc:
+        raise RuntimeError(
+            "Could not retrieve costs. Check AWS credentials/Cost Explorer access, "
+            "or verify the local emulator is running."
+        ) from exc
 
-    for item in response["ResultsByTime"]:
+    saved = 0
+    for item in response.get("ResultsByTime", []):
         day = item["TimePeriod"]["Start"]
-        amount = float(item["Total"]["UnblendedCost"]["Amount"])
+        groups = item.get("Groups", [])
+        if groups:
+            for group in groups:
+                service = group["Keys"][0] if group.get("Keys") else "Other"
+                amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
+                upsert_cost(day, service, amount)
+                saved += 1
+        else:
+            amount = float(item.get("Total", {}).get("UnblendedCost", {}).get("Amount", 0))
+            upsert_cost(day, "Total", amount)
+            saved += 1
 
-        cursor.execute(
-            """
-            INSERT INTO daily_costs (date, service, cost_usd)
-            VALUES (?, ?, ?)
-            """,
-            (day, "Total", amount)
-        )
-
-    connection.commit()
-    connection.close()
-
-    print("Cost data fetched and stored successfully!")
-
-    for item in response["ResultsByTime"]:
-        day = item["TimePeriod"]["Start"]
-        amount = item["Total"]["UnblendedCost"]["Amount"]
-        print(f"{day} -> ${amount}")
+    print(f"Saved {saved} daily cost record(s) for {start_date} through {end_date} (end exclusive).")
+    print(f"Mode: {MODE}. Billing data can be delayed and may change as AWS finalizes usage.")
 
 
 if __name__ == "__main__":
