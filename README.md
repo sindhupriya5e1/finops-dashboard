@@ -1,176 +1,130 @@
-# FinOps Dashboard – Cloud Cost Visibility & Free-Tier Usage Tracker
+# FinOps Dashboard — Cloud Cost Visibility
 
-## 📌 Project Overview
+A Python + SQLite project for collecting daily cloud costs, identifying cost-risk conditions, and exporting a weekly report. It supports a **local emulator demo mode** and an optional **real AWS Cost Explorer mode**.
 
-The **FinOps Dashboard** is a cloud cost monitoring and visibility project designed to track daily cloud usage, store cost data, identify cost-risk conditions, and visualize cloud cost trends through Grafana.
+## Features
 
-The project uses a **local AWS-compatible cloud emulator (Floci)** for development and testing instead of a production AWS account. This allows the project to demonstrate FinOps concepts without generating real AWS billing charges.
+- Fetch daily cost data for the last seven completed days
+- Store records in SQLite with duplicate-safe updates
+- Group real AWS costs by service
+- Summarize daily cost risk using configurable thresholds
+- Export a date-filtered weekly CSV report with service breakdown
+- Keep AWS credentials out of source code using the standard AWS credential chain
 
-## 🎯 Objectives
-
-- Monitor daily cloud cost and usage data
-- Store collected data in SQLite
-- Identify cost-risk conditions using configurable thresholds
-- Visualize cloud cost trends using Grafana
-- Generate weekly usage reports
-- Provide a simple dashboard for cloud cost visibility
-
-## 🏗️ Architecture
+## Architecture
 
 ```text
-Floci (AWS-Compatible Emulator)
-              ↓
-        Python / Boto3
-              ↓
-        AWS Cost Explorer
-              ↓
-          SQLite DB
-              ↓
-           Grafana
-              ↓
-     Cost Dashboard & Alerts
-              ↓
-       Weekly Usage Report
+AWS Cost Explorer (optional) / Local AWS-compatible emulator
+                         |
+                       Boto3
+                         |
+                   Python scripts
+                         |
+                  SQLite (data/)
+                    /          \
+          Risk summary       Weekly CSV
+             alerts.py        report.py
 ```
 
-## 🛠️ Technologies Used
-
-- **Python**
-- **Boto3**
-- **AWS Cost Explorer API**
-- **Floci** – Local AWS-compatible cloud emulator
-- **SQLite**
-- **Grafana**
-- **Pandas**
-- **Matplotlib**
-- **Docker**
-- **GitHub**
-
-## 📂 Project Structure
+## Project structure
 
 ```text
 finops-dashboard/
-│
-├── data/
-│   └── finops.db
-│
-├── reports/
-│   └── weekly_usage_report.csv
-│
-├── screenshots/
-│   └── FinOps_Project_Screenshots.pdf
-│
-├── database.py
-├── fetch_cost.py
-├── alerts.py
-├── report.py
+├── data/                 # Local SQLite database (not committed)
+├── reports/              # Generated CSV reports (not committed)
+├── database.py           # Schema and duplicate-safe writes
+├── fetch_cost.py         # Cost Explorer/emulator ingestion
+├── alerts.py             # Daily risk summary
+├── report.py             # Seven-day CSV report
 ├── requirements.txt
+├── .gitignore
 └── README.md
 ```
 
-## ⚙️ How It Works
+## Requirements
 
-### 1. Local Cloud Environment
+- Python 3.10+
+- For local demo mode: a compatible AWS emulator running at `http://localhost:4566` (or set `FINOPS_ENDPOINT_URL`)
+- For real AWS mode: an AWS account with Cost Explorer enabled and credentials with permission to call `ce:GetCostAndUsage`
 
-Floci provides an AWS-compatible local environment for development and testing.
+## Quick start: local demo mode
 
-Docker is used to run the required services locally.
+1. Clone the repository and enter the project folder.
+2. Create and activate a virtual environment.
+3. Install dependencies:
 
-### 2. Data Collection
+   ```bash
+   python -m venv .venv
+   # Windows PowerShell:
+   .venv\Scripts\Activate.ps1
+   # macOS/Linux:
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
 
-Python and Boto3 connect to the local AWS-compatible endpoint and retrieve cloud cost information using the Cost Explorer interface.
+4. Start your compatible local emulator. The default endpoint is `http://localhost:4566`.
+5. Initialize the database, then run collection and reports:
 
-### 3. Database Storage
+   ```bash
+   python database.py
+   python fetch_cost.py
+   python alerts.py
+   python report.py
+   ```
 
-The collected daily cost information is stored in a SQLite database.
+The emulator must implement the Cost Explorer API for collection to work. The project does not fabricate costs if the API is unavailable.
 
-Database table:
+## Optional: use real AWS Cost Explorer
 
-```text
-daily_costs
-```
+1. Enable Cost Explorer for your AWS account.
+2. Configure credentials securely using an AWS profile, environment credentials, or an attached IAM role. Do **not** put access keys in source code or commit them.
+3. Ensure the identity has permission for `ce:GetCostAndUsage`.
+4. Run:
 
-Main fields:
+   ```bash
+   # PowerShell
+   $env:FINOPS_MODE = "aws"
+   python fetch_cost.py
+   python alerts.py
+   python report.py
+   ```
 
-```text
-id
-date
-service
-cost_usd
-```
+   `FINOPS_MODE=aws` uses the normal Boto3 credential chain and groups costs by AWS service. Cost Explorer's end date is exclusive, so the scripts query the previous seven completed calendar days. AWS billing data can be delayed or revised.
 
-### 4. Risk Detection
+## Configuration
 
-The project applies configurable cost thresholds to classify daily cost conditions:
+| Variable | Default | Purpose |
+|---|---|---|
+| `FINOPS_MODE` | `local` | `local` emulator or `aws` Cost Explorer |
+| `FINOPS_ENDPOINT_URL` | `http://localhost:4566` | Local emulator endpoint |
+| `AWS_REGION` | `us-east-1` | Boto3 client region |
+| `FINOPS_DB_PATH` | `data/finops.db` | SQLite database path |
+| `FINOPS_WARNING_USD` | `0.05` | Demo daily warning threshold |
+| `FINOPS_AT_RISK_USD` | `0.10` | Demo daily at-risk threshold |
 
-| Cost | Status |
-|---|---|
-| Below $0.05 | SAFE |
-| $0.05 – $0.10 | WARNING |
-| Above $0.10 | AT-RISK |
+The threshold defaults are illustrative project settings, **not official AWS Free Tier limits**. Cost Explorer is for cost reporting, not a real-time spending stop or guarantee against charges.
 
-These thresholds are **demo/configurable thresholds** used for cost-risk monitoring and are not official AWS Free Tier limits.
+## Output
 
-### 5. Grafana Dashboard
+- SQLite records in `data/finops.db`
+- Weekly CSV report in `reports/weekly_usage_report.csv`
+- Console risk summary from `alerts.py`
 
-Grafana connects to the SQLite database and displays:
+## Troubleshooting
 
-- Cloud Cost Trend
-- Daily Cost Details
-- Risk Status
-- Total Cloud Cost
+- **Connection error in local mode:** make sure the emulator is running and `FINOPS_ENDPOINT_URL` is correct.
+- **AWS access denied:** verify Cost Explorer is enabled and the active credentials include `ce:GetCostAndUsage`.
+- **No report data:** run `fetch_cost.py` successfully first and check the selected date range.
+- **Missing dependencies:** activate the intended virtual environment and run `pip install -r requirements.txt`.
 
-### 6. Weekly Report
+## Screenshots
 
-The project generates a weekly CSV report containing:
+See [FinOps_Project_Screenshots.pdf](FinOps_Project_Screenshots.pdf) for the project's existing screenshots.
 
-- Total Cost
-- Average Daily Cost
-- Highest Daily Cost
-- Number of Recorded Days
+## Author
 
-## 📊 Dashboard
+**Sindhu Priya** — B.Tech, Computer Science and Engineering
 
-The Grafana dashboard provides a visual overview of cloud cost trends and risk status.
+## Disclaimer
 
-The current project records **7 days of usage data** and displays the cost status as **SAFE** based on the configured thresholds.
-
-## 📸 Project Screenshots
-
-All major project screenshots are available in:
-
-```text
-screenshots/FinOps_Project_Screenshots.pdf
-```
-
-The PDF contains screenshots of:
-
-1. Docker / Floci / Grafana running
-2. Python → Floci connection
-3. SQLite database creation
-4. Cost data collection
-5. Cost risk report
-6. Weekly usage report
-7. Grafana dashboard
-8. GitHub repository
-
-## 🚀 Future Enhancements
-
-- Add service-level Free Tier usage tracking
-- Add automated email/Slack alerts
-- Add detailed Grafana dashboards
-- Add cloud budget monitoring
-- Support multiple cloud providers
-- Add historical cost forecasting
-- Add automated scheduled data collection
-- Add advanced anomaly detection
-
-## 👩‍💻 Author
-
-**Sindhu Priya**
-
-B.Tech – Computer Science & Engineering
-
-## 📜 Note
-
-This project uses a **local AWS-compatible cloud emulator** for development and demonstration. It does not represent real production AWS billing data and does not generate real AWS cloud charges.
+This is an educational FinOps visibility project. Local mode requires a compatible emulator and is not production AWS billing data. Real AWS mode requires your own AWS account and permissions. Billing data can be delayed; this project does not stop resources or guarantee prevention of charges.
