@@ -1,0 +1,56 @@
+name: Daily FinOps Cost Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Runs daily at 08:30 UTC. GitHub may delay scheduled jobs.
+    - cron: "30 8 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  cost-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      FINOPS_MODE: aws
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate AWS configuration
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::Add AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as repository Actions secrets before running this workflow."
+            exit 1
+          fi
+
+      - name: Fetch AWS cost data
+        run: python fetch_cost.py
+
+      - name: Generate risk summary
+        run: python alerts.py
+
+      - name: Generate weekly CSV report
+        run: python report.py
+
+      - name: Upload weekly report
+        uses: actions/upload-artifact@v4
+        with:
+          name: finops-weekly-report
+          path: reports/weekly_usage_report.csv
+          if-no-files-found: warn
+          retention-days: 14
