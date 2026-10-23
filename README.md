@@ -1,128 +1,164 @@
 # FinOps Dashboard — Cloud Cost Visibility
 
-A Python + SQLite project for collecting daily cloud costs, identifying cost-risk conditions, and exporting a weekly report. It supports a local AWS-compatible emulator demo mode and optional real AWS Cost Explorer mode.
+A beginner-friendly FinOps project that stores daily cloud-cost records in SQLite, highlights cost-risk levels, exports weekly CSV reports, and visualizes trends in Grafana.
+
+**No AWS account is needed for the demo.** The default demo mode generates clearly labelled illustrative data locally. It does not connect to AWS, use credentials, or create cloud charges. Switch to AWS mode only when you have an AWS account and want to analyze real billing data.
 
 ## Features
-- Fetch costs for the last seven completed calendar days
-- Group real AWS cost data by service
-- Store records in SQLite with duplicate-safe updates
-- Daily cost-risk summary and weekly CSV report
-- Grafana dashboard for daily trends, service costs, totals, and records
-- GitHub Actions workflow for scheduled/manual AWS cost checks
-- Unit tests for alert classification and database upserts
 
-## Architecture
+- One-command sample data generation for seven completed days
+- Separate costs for EC2, S3, RDS, and Lambda in demo mode
+- SQLite storage with duplicate-safe updates
+- Configurable daily cost-risk thresholds
+- Weekly summary and CSV export
+- Grafana dashboard for cost trends and service breakdown
+- Unit tests for alert classification and database behavior
+- Optional real AWS Cost Explorer integration
+- Optional GitHub Actions workflow for scheduled AWS reporting
+
+## How it works
+
 ```text
-AWS Cost Explorer or local compatible emulator
-                  |
-                Boto3
-                  |
-             Python jobs
-                  |
-             SQLite DB
-             /       \
-         Alerts     Weekly CSV
-                  |
-             Grafana panels
+Demo sample data / Local emulator / AWS Cost Explorer
+                         |
+                       Python
+                         |
+                       SQLite
+                    /          \
+               Cost alerts   Weekly CSV
+                         |
+                       Grafana
 ```
 
 ## Requirements
-- Python 3.10+
-- Local mode: compatible emulator at `http://localhost:4566`
-- AWS mode: Cost Explorer enabled and credentials with `ce:GetCostAndUsage`
-- Docker Compose for Grafana
 
-## Python setup
-```bash
-python -m venv .venv
-# Windows PowerShell:
+- Python 3.10 or newer
+- Internet connection to install Python packages
+- Docker Desktop only if you want to run Grafana
+- AWS account is optional and only required for real billing data
+
+## Quick start on Windows
+
+Open PowerShell in the project folder and run:
+
+```powershell
+py -m venv .venv
 .venv\Scripts\Activate.ps1
-# macOS/Linux:
-source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
-python database.py
-```
-
-## Local demo mode
-Default is `FINOPS_MODE=local`. Start a compatible emulator implementing Cost Explorer, then run:
-```bash
 python fetch_cost.py
 python alerts.py
 python report.py
 python -m unittest discover -s tests -v
 ```
-The app does not invent fallback costs if the emulator API fails.
 
-## Real AWS Cost Explorer mode
-1. Enable Cost Explorer in your AWS account.
-2. Configure credentials securely with an AWS profile, environment credentials, or an IAM role. Never commit keys.
-3. Ensure the identity has permission for `ce:GetCostAndUsage`.
+If PowerShell blocks virtual-environment activation, use this for the current terminal only, then activate again:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.venv\Scripts\Activate.ps1
+```
+
+The default `FINOPS_MODE=demo` means the quick-start commands work without AWS or a local emulator. The collector writes sample records to `data/finops.db`; the report is saved to `reports/weekly_usage_report.csv`.
+
+## Run Grafana dashboard (optional)
+
+1. Install and start Docker Desktop.
+2. Run the collector first so `data/finops.db` exists.
+3. Set a local Grafana password in PowerShell and start the services:
+
+```powershell
+$env:GRAFANA_ADMIN_PASSWORD = "Choose-A-Strong-Local-Password"
+docker compose up -d
+```
+
+4. Open [http://localhost:3000](http://localhost:3000) and sign in as `admin` using the password you set.
+5. Open the provisioned **FinOps Dashboard**.
+
+The SQLite database is mounted read-only in Grafana. On first startup Docker needs internet access to download the configured SQLite data-source plugin. If you do not have Docker, the Python collector, alerts, reports, and tests still work.
+
+## Modes
+
+### Demo mode (default; no AWS account required)
+
+```powershell
+$env:FINOPS_MODE = "demo"
+python fetch_cost.py
+python alerts.py
+python report.py
+```
+
+Sample amounts are illustrative and deliberately labelled as demo data. Do not present them as real cloud usage or an actual AWS bill.
+
+### Real AWS mode (optional)
+
+1. Create or use an AWS account and enable Cost Explorer.
+2. Configure AWS credentials securely using an AWS profile, environment credentials, or an IAM role. Never commit credentials to GitHub.
+3. Give the identity only the required billing-read permission, including `ce:GetCostAndUsage`.
 4. Run:
+
 ```powershell
 $env:FINOPS_MODE = "aws"
 python fetch_cost.py
 python alerts.py
 python report.py
 ```
-Boto3 uses its standard credential chain and groups real AWS costs by service. The query covers the previous seven completed days because Cost Explorer's end date is exclusive. Billing data can be delayed or revised.
 
-## Grafana dashboard
-1. Run the collector at least once so `data/finops.db` exists.
-2. Start Grafana: `docker compose up -d`
-3. Open `http://localhost:3000`.
-4. Sign in as `admin`. Set a strong local password using `GRAFANA_ADMIN_PASSWORD`; do not expose Grafana with a default password.
-5. Find the provisioned dashboard in the FinOps folder.
+The collector groups real costs by AWS service and queries the previous seven completed calendar days. Cost Explorer's end date is exclusive, and billing information can be delayed or revised.
 
-Grafana uses the SQLite plugin and mounts the database read-only. First startup needs network access to install the plugin.
+### Local emulator mode (optional)
 
-## GitHub Actions daily workflow
-The workflow at `.github/workflows/daily-cost-check.yml` can run manually or on a daily schedule. To enable it:
-1. In GitHub, open **Settings → Secrets and variables → Actions**.
-2. Add repository secrets `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for a least-privilege identity with `ce:GetCostAndUsage`.
-3. Optionally set repository variable `AWS_REGION` (default `us-east-1`).
-4. Open **Actions → Daily FinOps Cost Check → Run workflow**.
+Set `FINOPS_MODE=local` and run a compatible Cost Explorer emulator at `http://localhost:4566` (or set `FINOPS_ENDPOINT_URL`). A compatible emulator is required; local mode does not silently replace failed API responses with sample values.
 
-It intentionally uses real AWS mode and fails if credentials are missing. Scheduled jobs may be delayed. The CSV report is uploaded as a workflow artifact for 14 days.
+## Cost-risk thresholds
 
-## Configuration
-| Variable | Default | Purpose |
-|---|---|---|
-| `FINOPS_MODE` | `local` | `local` emulator or `aws` Cost Explorer |
-| `FINOPS_ENDPOINT_URL` | `http://localhost:4566` | Local emulator endpoint |
-| `AWS_REGION` | `us-east-1` | AWS client region |
-| `FINOPS_DB_PATH` | `data/finops.db` | SQLite database path |
-| `FINOPS_WARNING_USD` | `0.05` | Demo daily warning threshold |
-| `FINOPS_AT_RISK_USD` | `0.10` | Demo daily at-risk threshold |
+The default warning and at-risk thresholds are small illustrative values for learning. Configure them with:
 
-Threshold defaults are illustrative values, **not official AWS Free Tier limits**. Cost Explorer is not a real-time spending stop; this project does not automatically stop resources or guarantee prevention of charges.
+```powershell
+$env:FINOPS_WARNING_USD = "1.00"
+$env:FINOPS_AT_RISK_USD = "2.00"
+python alerts.py
+```
+
+These values are examples, not official AWS Free Tier limits. Alerts summarize recorded costs; they do not stop resources or guarantee prevention of charges.
+
+## GitHub Actions (optional, real AWS only)
+
+The workflow in `.github/workflows/daily-cost-check.yml` is for real AWS reporting. To use it, add `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` as repository Actions secrets, with a least-privilege identity that can call Cost Explorer. Optionally define the `AWS_REGION` repository variable. Then run **Actions → Daily FinOps Cost Check → Run workflow**.
+
+If you do not have an AWS account, you can ignore this workflow and use the local demo mode. Never put AWS keys in source files or commit them.
 
 ## Project structure
+
 ```text
 finops-dashboard/
-├── .github/workflows/daily-cost-check.yml
-├── grafana/dashboards/finops-dashboard.json
-├── grafana/provisioning/
-├── tests/
-├── data/
-├── reports/
-├── alerts.py
-├── database.py
-├── fetch_cost.py
-├── report.py
-├── docker-compose.yml
-├── requirements.txt
-└── README.md
+├── .github/workflows/       # Optional scheduled AWS report
+├── grafana/
+│   ├── dashboards/          # Dashboard definition
+│   └── provisioning/        # Data source and dashboard setup
+├── tests/                   # Unit tests
+├── data/                    # Local SQLite database (git-ignored)
+├── reports/                 # Generated CSV reports (git-ignored)
+├── alerts.py                # Daily cost-risk summary
+├── database.py              # SQLite schema and persistence
+├── fetch_cost.py            # Demo, emulator, or AWS collection
+├── report.py                # Weekly summary and CSV export
+├── docker-compose.yml       # Optional Grafana service
+└── requirements.txt
 ```
 
 ## Troubleshooting
-- Local connection error: confirm emulator is running and `FINOPS_ENDPOINT_URL` is correct.
-- AWS AccessDenied: verify Cost Explorer is enabled and credentials have `ce:GetCostAndUsage`.
-- No report: run `fetch_cost.py` successfully first.
-- Grafana has no data: ensure `data/finops.db` exists before Compose startup and verify the SQLite data-source path.
-- Workflow fails early: configure both GitHub Actions secrets.
+
+- `No module named boto3/pandas`: activate `.venv` and run `pip install -r requirements.txt`.
+- PowerShell activation blocked: use the process-scoped execution-policy command in the setup section.
+- No records or report: run `python fetch_cost.py` before `python alerts.py` and `python report.py`.
+- Grafana is blank: ensure the collector ran first, Docker is running, and the SQLite data-source plugin installed successfully.
+- AWS `AccessDenied`: check Cost Explorer is enabled and the configured identity has `ce:GetCostAndUsage`.
 
 ## Author
+
 **Sindhu Priya** — B.Tech, Computer Science and Engineering
 
 ## Disclaimer
-Educational FinOps visibility project. Local mode requires a compatible emulator and is not production billing data. Real AWS mode uses your own account and permissions. Billing data can be delayed; this project does not stop resources or guarantee prevention of charges.
+
+This is an educational FinOps visibility project. Demo costs are invented illustrative values, not actual cloud bills. Real AWS mode uses your own account and permissions. Billing data can be delayed; this project does not automatically stop resources or guarantee prevention of charges.
