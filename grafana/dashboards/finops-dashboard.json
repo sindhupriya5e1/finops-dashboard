@@ -16,7 +16,7 @@
       "gridPos": {"h": 9, "w": 16, "x": 0, "y": 0},
       "fieldConfig": {"defaults": {"unit": "currencyUSD"}, "overrides": []},
       "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}},
-      "targets": [{"refId": "A", "rawSql": "SELECT date AS time, SUM(cost_usd) AS cost_usd FROM daily_costs GROUP BY date ORDER BY date", "format": "time_series"}]
+      "targets": [{"refId": "A", "rawSql": "SELECT datetime(date) AS time, SUM(cost_usd) AS cost_usd FROM daily_costs GROUP BY date ORDER BY date", "format": "time_series"}]
     },
     {
       "id": 2,
