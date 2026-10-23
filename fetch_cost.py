@@ -1,7 +1,9 @@
-"""Fetch the last seven completed days of cost data.
+"""Collect daily cloud costs into SQLite.
 
-Set FINOPS_MODE=aws and configure normal AWS credentials to use real Cost Explorer.
-Set FINOPS_MODE=local to use a compatible local emulator (demo data only).
+Modes:
+- demo: deterministic illustrative costs; no AWS account or emulator required.
+- local: query a compatible AWS Cost Explorer emulator.
+- aws: query real AWS Cost Explorer using the standard credential chain.
 """
 import os
 from datetime import date, timedelta
@@ -11,8 +13,29 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 from database import create_database, upsert_cost
 
-MODE = os.getenv("FINOPS_MODE", "local").strip().lower()
+MODE = os.getenv("FINOPS_MODE", "demo").strip().lower()
 REGION = os.getenv("AWS_REGION", "us-east-1")
+
+# Illustrative daily service costs used only in demo mode. These are not real bills.
+DEMO_SERVICES = {
+    "Amazon EC2": 0.42,
+    "Amazon S3": 0.08,
+    "Amazon RDS": 0.31,
+    "AWS Lambda": 0.04,
+}
+
+
+def load_demo_costs(end_date=None):
+    """Create seven completed days of clearly labelled illustrative service data."""
+    end_date = end_date or date.today()
+    records = []
+    # Slight deterministic variation makes the dashboard trend more informative.
+    multipliers = (0.82, 0.94, 1.08, 0.91, 1.17, 1.02, 1.11)
+    for offset, multiplier in enumerate(multipliers, start=7):
+        day = (end_date - timedelta(days=offset)).isoformat()
+        for service, base_cost in DEMO_SERVICES.items():
+            records.append((day, service, round(base_cost * multiplier, 4)))
+    return records
 
 
 def make_cost_client():
@@ -28,10 +51,26 @@ def make_cost_client():
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY", "test"),
             region_name=REGION,
         )
-    raise ValueError("FINOPS_MODE must be 'local' or 'aws'.")
+    raise ValueError("FINOPS_MODE must be 'demo', 'local', or 'aws'.")
+
+
+def fetch_demo_costs():
+    create_database()
+    records = load_demo_costs()
+    for day, service, amount in records:
+        upsert_cost(day, service, amount)
+    print(f"Demo mode: saved {len(records)} illustrative service-cost records.")
+    print("These sample values are not real AWS billing data and create no AWS charges.")
 
 
 def fetch_and_store_costs():
+    if MODE == "demo":
+        fetch_demo_costs()
+        return
+
+    if MODE not in {"local", "aws"}:
+        raise ValueError("FINOPS_MODE must be 'demo', 'local', or 'aws'.")
+
     create_database()
     # Cost Explorer's End date is exclusive; use completed days to avoid partial today.
     end_date = date.today()
